@@ -19,14 +19,14 @@ export const useAuthStore = defineStore('auth', {
       try {
         await this.getToken();
         const res = await axios.post('/api/auth/login', form);
-
+    
         // Almacenar el token y la información del usuario
         this.authToken = res.data.token;
         this.authUser = res.data.data;
         localStorage.setItem('authToken', this.authToken); // Persistir token
-
-        // Redirigir a la página de medicamentos
-        window.location.href = '/medications';
+    
+        // Redirigir a la página de medicamentos usando Vue Router
+        this.router.push('/medications');
       } catch (errors) {
         let desc = '';
         if (errors.response && errors.response.data.errors) {
@@ -38,18 +38,18 @@ export const useAuthStore = defineStore('auth', {
         }
         show_alerta(desc, 'error', '');
       }
-    },
+    },  
     async register(form) {
       try {
         await this.getToken();
         const res = await axios.post('/api/auth/register', form);
-
-        // Mostrar éxito
-        show_alerta(res.data.message, 'success', ' ');
-
+    
+        // Mostrar éxito y redirigir
+        show_alerta(res.data.message, 'success', '');
+    
         // Redirigir al login después de 2 segundos
         setTimeout(() => {
-          window.location.href = '/login';
+          this.router.push('/login'); // Usando Vue Router
         }, 2000);
       } catch (errors) {
         let desc = '';
