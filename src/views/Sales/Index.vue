@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted } from 'vue';
 import { confirmation, sendRequest } from '../../functions';
 import { useAuthStore } from '../../stores/auth';
 import Modal from '../../components/Modal.vue';
@@ -11,7 +11,7 @@ axios.defaults.headers.common['Authorization'] = 'Bearer ' + authStore.authToken
 onMounted(async () => {
     await getClientes();
     await getMedications();
-    await getVentas(1);
+    await getVentas(1); // Cargar la primera página al inicio
 });
 
 const clientes = ref([]);
@@ -19,6 +19,7 @@ const medications = ref([]);
 const ventas = ref([]);
 const load = ref(false);
 const rows = ref(0);
+const currentPage = ref(1); // Mantener el seguimiento de la página actual
 const form = ref({
     cliente_id: '',
     medicamento_id: '',
@@ -40,14 +41,10 @@ const getClientes = async () => {
 const getMedications = async () => {
     try {
         const response = await axios.get('/api/medicamentos');
-        console.log('Response de medicamentos:', response.data);
-
-        // Accede a response.data.data para obtener los datos de los medicamentos
         medications.value = response.data.data.map((med) => ({
             id: med.id,
             name: med.name,
         }));
-        rows.value = response.data.last_page; // Para manejar la paginación
     } catch (error) {
         console.error('Error al obtener medicamentos:', error.message);
     }
@@ -55,10 +52,12 @@ const getMedications = async () => {
 
 const getVentas = async (page) => {
     try {
+        load.value = false; // Mostrar indicador de carga
         const response = await axios.get(`/api/ventas?page=${page}`);
         ventas.value = response.data;
-        rows.value = response.data.last_page;
-        load.value = true;
+        rows.value = response.data.last_page; // Total de páginas
+        currentPage.value = page; // Actualizar la página actual
+        load.value = true; // Ocultar indicador de carga
     } catch (error) {
         console.error('Error al obtener ventas:', error.message);
     }
@@ -97,7 +96,7 @@ const save = async () => {
             await sendRequest('PUT', form.value, `/api/ventas/${id.value}`, '');
         }
         clear();
-        getVentas(1);
+        await getVentas(currentPage.value); // Mantener la página actual después de guardar
     } catch (error) {
         console.error('Error al guardar venta:', error.message);
     }
@@ -142,7 +141,7 @@ const save = async () => {
             </thead>
             <tbody>
               <tr v-for="(venta, i) in ventas.data || []" :key="venta.id">
-                <td>{{ i + 1 }}</td>
+                <td>{{ i + 1 + (currentPage - 1) * ventas.per_page }}</td>
                 <td>{{ venta.cliente }}</td>
                 <td>{{ venta.medicamento }}</td>
                 <td>{{ venta.cantidad }}</td>
@@ -194,18 +193,4 @@ const save = async () => {
     </div>
   </Modal>
 </template>
-
-<style scoped>
-.table-info {
-  background-color: #d1ecf1;
-}
-
-.shadow-sm {
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-.btn-success {
-  background-color: #28a745;
-}
-</style>
 
