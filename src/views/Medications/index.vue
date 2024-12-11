@@ -2,8 +2,6 @@
 import { ref, onMounted, nextTick } from 'vue';
 import { confirmation, sendRequest } from '../../functions';
 import { useAuthStore } from '../../stores/auth';
-import Modal from '../../components/Modal.vue';
-import Paginate from 'vuejs-paginate-next';
 
 const authStore = useAuthStore();
 axios.defaults.headers.common['Authorization'] = 'Bearer ' + authStore.authToken;
@@ -16,7 +14,10 @@ onMounted(async () => {
 const laboratories = ref([]);
 const medications = ref([]);
 const load = ref(false);
-const rows = ref(0);
+const currentPage = ref(1);
+const totalPages = ref(1);
+const perPage = ref(10);
+
 const form = ref({
     name: '',
     descripcion: '',
@@ -25,6 +26,7 @@ const form = ref({
     laboratorio_id: '',
     image: null,
 });
+
 const title = ref('');
 const operation = ref(1);
 const id = ref('');
@@ -40,20 +42,27 @@ const getLaboratories = async () => {
     }
 };
 
-const getMedications = async (page) => {
+const getMedications = async (page = 1) => {
     try {
+        load.value = false;
         const response = await axios.get(`/api/medicamentos?page=${page}`);
-        medications.value = response.data;
-        rows.value = response.data.last_page;
+        medications.value = response.data.data || [];
+        currentPage.value = response.data.current_page || 1;
+        totalPages.value = response.data.last_page || 1;
+        load.value = true;
     } catch (error) {
         console.error('Error al obtener medicamentos:', error.message);
-    } finally {
-        load.value = true;
     }
 };
 
 const deleteMedications = (id, name) => {
     confirmation(name, `/api/medicamentos/${id}`, '/medications');
+};
+
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        getMedications(page);
+    }
 };
 
 const openModal = (op, name = '', descripcion = '', caducidad = '', precio = '', laboratorio_id = '', image = null, medication = null) => {
@@ -88,25 +97,38 @@ const onImageChange = (e) => {
 };
 
 const save = async () => {
-  const formData = new FormData();
-formData.append('name', form.name);
-formData.append('descripcion', form.descripcion);
-formData.append('caducidad', form.caducidad);
-formData.append('precio', form.precio);
-formData.append('laboratorio_id', form.laboratorio_id);
+    try {
+        const formData = new FormData();
+        formData.append('name', form.value.name);
+        formData.append('descripcion', form.value.descripcion);
+        formData.append('caducidad', form.value.caducidad);
+        formData.append('precio', form.value.precio);
+        formData.append('laboratorio_id', form.value.laboratorio_id);
 
-if (form.image) {
-    formData.append('image', form.image);
-}
+        if (form.value.image) {
+            formData.append('image', form.value.image);
+        }
 
-axios.post('/api/medicamentos/' + id, formData, {
-    headers: {
-        'Content-Type': 'multipart/form-data'
+        if (operation.value === 1) {
+            await axios.post('/api/medicamentos', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+        } else {
+            await axios.post(`/api/medicamentos/${id.value}`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+        }
+
+        clear();
+        getMedications(1);
+    } catch (error) {
+        console.error('Error al guardar el medicamento:', error.response?.data || error.message);
     }
-});
-
 };
-
 </script>
 
 <template>
@@ -122,9 +144,9 @@ axios.post('/api/medicamentos/' + id, formData, {
     <div class="row">
       <div class="col-md-6 offset-md-3">
         <div class="d-grid gap-2">
-          <button class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#modal" @click="openModal(1)">
-            <i class="fa-solid fa-circle-plus me-2"></i>Agregar Medicamento
-          </button>
+          <router-link :to="{ path: 'medications/create' }" class="btn btn-success shadow-sm">
+            <i class="fa-solid fa-circle-plus me-2"></i>Agregar medicamento
+          </router-link>
         </div>
       </div>
     </div>
@@ -149,8 +171,8 @@ axios.post('/api/medicamentos/' + id, formData, {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(med, i) in medications.data || []" :key="med.id">
-                <td>{{ i + 1 }}</td>
+              <tr v-for="(med, i) in medications" :key="med.id">
+                <td>{{ (currentPage - 1) * 10 + i + 1 }}</td>
                 <td>{{ med.name }}</td>
                 <td>{{ med.descripcion }}</td>
                 <td>{{ med.caducidad }}</td>
@@ -165,10 +187,9 @@ axios.post('/api/medicamentos/' + id, formData, {
                   />
                 </td>
                 <td>
-                  <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#modal"
-                    @click="openModal(2, med.name, med.descripcion, med.caducidad, med.precio, med.laboratorio_id, med.image, med.id)">
+                  <router-link :to="{ path: '/medications/edit/' + med.id }" class="btn btn-warning btn-sm shadow-sm">
                     <i class="fa-solid fa-edit"></i> Editar
-                  </button>
+                  </router-link>
                   <button class="btn btn-danger btn-sm" @click="deleteMedications(med.id, med.name)">
                     <i class="fa-solid fa-trash"></i> Eliminar
                   </button>
@@ -176,48 +197,26 @@ axios.post('/api/medicamentos/' + id, formData, {
               </tr>
             </tbody>
           </table>
-          <Paginate :page-count="rows" :click-handler="getMedications" prev-text="Anterior" next-text="Siguiente" container-class="paginate mt-3"></Paginate>
+          <!-- Paginación -->
+          <div class="d-flex justify-content-between align-items-center mt-3">
+            <button
+              class="btn btn-secondary"
+              :disabled="currentPage <= 1"
+              @click="goToPage(currentPage - 1)"
+            >
+              Anterior
+            </button>
+            <span>Página {{ currentPage }} de {{ totalPages }}</span>
+            <button
+              class="btn btn-secondary"
+              :disabled="currentPage >= totalPages"
+              @click="goToPage(currentPage + 1)"
+            >
+              Siguiente
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </div>
-
-  <Modal id="modal" :title="title">
-    <div class="modal-body">
-      <form @submit.prevent="save">
-        <div class="mb-3">
-          <label for="name" class="form-label">Nombre del Medicamento</label>
-          <input type="text" id="name" v-model="form.name" class="form-control" placeholder="Nombre" required>
-        </div>
-        <div class="mb-3">
-          <label for="descripcion" class="form-label">Descripción</label>
-          <textarea id="descripcion" v-model="form.descripcion" class="form-control" placeholder="Descripción" required></textarea>
-        </div>
-        <div class="mb-3">
-          <label for="caducidad" class="form-label">Fecha de Caducidad</label>
-          <input type="date" id="caducidad" v-model="form.caducidad" class="form-control" required>
-        </div>
-        <div class="mb-3">
-          <label for="precio" class="form-label">Precio</label>
-          <input type="number" id="precio" v-model="form.precio" class="form-control" placeholder="Precio" step="0.01" required>
-        </div>
-        <div class="mb-3">
-          <label for="laboratorio" class="form-label">Laboratorio</label>
-          <select id="laboratorio" v-model="form.laboratorio_id" class="form-select" required>
-            <option disabled value="">Seleccionar laboratorio</option>
-            <option v-for="lab in laboratories" :key="lab.id" :value="lab.id">{{ lab.laboratorio }}</option>
-          </select>
-        </div>
-        <div class="mb-3">
-          <label for="image" class="form-label">Imagen</label>
-          <input type="file" id="image" @change="onImageChange" class="form-control" accept="image/*">
-        </div>
-        <div class="d-grid">
-          <button class="btn btn-success">
-            <i class="fa-solid fa-save me-2"></i>Guardar
-          </button>
-        </div>
-      </form>
-    </div>
-  </Modal>
 </template>
